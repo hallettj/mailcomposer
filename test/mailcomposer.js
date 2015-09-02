@@ -379,7 +379,7 @@ exports["Text encodings"] = {
         });
 
         test.equal(mc._message.from, "Jaanuar =?UTF-8?Q?Veebruar=2C_M=C3=A4rts?= <=?UTF-8?Q?m=C3=A4rts?=@xn--mrts-loa.eu>");
-		
+
         mc.setMessageOption({
             sender: '"Ноде Майлер" <Mayler@nodejs.org>'
         });
@@ -447,8 +447,8 @@ exports["Text encodings"] = {
             test.ok(chunk.toString().trim().match(/From\:\s[^\r\n]+\r\n\s+[^\r\n]+/));
             test.done();
         });
+        mc._generateBodyStructure();
         mc._composeHeader();
-
     }
 
 };
@@ -492,13 +492,16 @@ exports["Mail related"] = {
         mc.addAlternative({contents:"tere tere"});
         test.equal(mc._alternatives.length, 1);
 
-        test.equal(mc._alternatives[0].contentType, "application/octet-stream");
-        test.equal(mc._alternatives[0].contentEncoding, "base64");
-        test.equal(mc._alternatives[0].contents, "tere tere");
-
         mc.addAlternative({contents:"tere tere", contentType:"text/plain", contentEncoding:"7bit"});
-        test.equal(mc._alternatives[1].contentType, "text/plain");
-        test.equal(mc._alternatives[1].contentEncoding, "7bit");
+        mc._composeMessage();
+
+        var alternatives = mc._message.tree.childNodes;
+        test.equal(lookupHeader("Content-Type", alternatives[0]), "application/octet-stream");
+        test.equal(alternatives[0].contentEncoding, "base64");
+        test.equal(alternatives[0].contents, "tere tere");
+
+        test.ok(startsWith(lookupHeader("Content-Type", alternatives[1]), "text/plain"));
+        test.equal(alternatives[1].contentEncoding, "7bit");
 
         test.done();
     },
@@ -589,6 +592,7 @@ exports["Mail related"] = {
             test.done();
         });
 
+        mc._generateBodyStructure();
         mc._composeHeader();
     }
 };
@@ -677,14 +681,14 @@ exports["Mime tree"] = {
         test.done();
     },
     "Attachment": function(test){
-        test.expect(5);
+        test.expect(4);
 
         var mc = new MailComposer();
         mc.setMessageOption();
         mc.addAttachment({contents:"\r\n"});
         mc._composeMessage();
 
-        test.equal(mc._message.tree.childNodes.length, 2);
+        test.equal(mc._message.tree.childNodes.length, 1);
         test.equal(mc._getHeader("Content-Type").split(";").shift().trim(), "multipart/mixed");
         test.ok(mc._message.tree.boundary);
 
@@ -697,7 +701,7 @@ exports["Mime tree"] = {
         test.done();
     },
     "Several attachments": function(test){
-        test.expect(6);
+        test.expect(5);
 
         var mc = new MailComposer();
         mc.setMessageOption();
@@ -706,7 +710,7 @@ exports["Mime tree"] = {
 
         mc._composeMessage();
 
-        test.equal(mc._message.tree.childNodes.length, 3);
+        test.equal(mc._message.tree.childNodes.length, 2);
         test.equal(mc._getHeader("Content-Type").split(";").shift().trim(), "multipart/mixed");
         test.ok(mc._message.tree.boundary);
 
@@ -1161,8 +1165,7 @@ exports["Stream parser"] = {
         */
 
         mp.on("end", function(mail){
-            test.equal(mc._attachments.length, 0);
-            test.equal(mc._relatedAttachments.length, 1);
+            test.ok(startsWith(mail.headers["content-type"], "multipart/related"));
             test.equal(mail.html.trim(), "<b><img src=\"cid:test@node\"/></b>");
             test.equal(mail.attachments[0].checksum, "59fbcbcaf18cb9232f7da6663f374eb9");
             test.done();
@@ -1189,8 +1192,8 @@ exports["Stream parser"] = {
         mc.pipe(mp);
 
         mp.on("end", function(mail){
-            test.equal(mc._attachments.length, 1);
-            test.equal(mc._relatedAttachments.length, 1);
+            test.ok(startsWith(mail.headers["content-type"], "multipart/mixed"));
+            test.ok(startsWith(lookupHeader("Content-Type", mc._message.tree.childNodes[0]), "multipart/related"));
             test.equal(mail.html.trim(), "<b><img src=\"cid:test@node\"/></b>");
             test.equal(mail.attachments[0].checksum, "59fbcbcaf18cb9232f7da6663f374eb9");
             test.equal(mail.attachments[1].checksum, "59fbcbcaf18cb9232f7da6663f374eb9");
@@ -1215,8 +1218,8 @@ exports["Stream parser"] = {
         mc.pipe(mp);
 
         mp.on("end", function(mail){
-            test.equal(mc._attachments.length, 0);
-            test.equal(mc._relatedAttachments.length, 1);
+            test.ok(startsWith(mail.headers["content-type"], "multipart/alternative"));
+            test.ok(startsWith(lookupHeader("Content-Type", mc._message.tree.childNodes[1]), "multipart/related"));
             test.equal(mail.text.trim(), "test");
             test.equal(mail.html.trim(), "<b><img src=\"cid:test@node\"/></b>");
             test.equal(mail.attachments[0].checksum, "59fbcbcaf18cb9232f7da6663f374eb9");
@@ -1245,8 +1248,11 @@ exports["Stream parser"] = {
         mc.pipe(mp);
 
         mp.on("end", function(mail){
-            test.equal(mc._attachments.length, 1);
-            test.equal(mc._relatedAttachments.length, 1);
+            test.ok(startsWith(mail.headers["content-type"], "multipart/mixed"));
+            test.ok(startsWith(lookupHeader("Content-Type", mc._message.tree.childNodes[0]),
+                               "multipart/alternative"));
+            test.ok(startsWith(lookupHeader("Content-Type", mc._message.tree.childNodes[0].childNodes[1]),
+                               "multipart/related"));
             test.equal(mail.text.trim(), "test");
             test.equal(mail.html.trim(), "<b><img src=\"cid:test@node\"/></b>");
             test.equal(mail.attachments[0].checksum, "59fbcbcaf18cb9232f7da6663f374eb9");
@@ -1490,3 +1496,14 @@ exports["Output buffering"] = {
 
     }
 };
+
+function lookupHeader(header, part) {
+    var matches = part.headers.filter(function(h) { return h[0] === header; });
+    if (matches.length > 0) {
+        return matches[0][1];
+    }
+}
+
+function startsWith(actual, expected) {
+    return actual.slice(0, expected.length) === expected;
+}

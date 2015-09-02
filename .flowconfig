@@ -1,0 +1,9 @@
+[ignore]
+.*/flow-bin/.*
+.*/es6-promise/.*
+
+[include]
+
+[libs]
+
+[options]
