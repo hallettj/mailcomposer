@@ -292,7 +292,60 @@ exports["General tests"] = {
         test.deepEqual(mc._convertAddresses(input), output);
 
         test.done();
+    },
+
+    "Do not mutate input when converting an address": function(test){
+        var mc = new MailComposer(),
+            input = {
+                name: "I \"am\" test",
+                address: "test@example.com"
+            },
+            expected = {
+                name: "I \"am\" test",
+                address: "test@example.com"
+            };
+        mc.convertAddress(input);
+
+        test.deepEqual(input, expected);
+
+        test.done();
+    },
+
+    "Do not mutate inputs when converting multiple addresses": function(test){
+        var mc = new MailComposer(),
+            input = [
+                {
+                    name: "I \"am\" test",
+                    address: "test@example.com"
+                },
+                {
+                    name: "Punycode Address",
+                    address: "test@jõgeva.com"
+                },
+                {
+                    address: "test@example.com"
+                }
+            ],
+            expected = [
+                {
+                    name: "I \"am\" test",
+                    address: "test@example.com"
+                },
+                {
+                    name: "Punycode Address",
+                    address: "test@jõgeva.com"
+                },
+                {
+                    address: "test@example.com"
+                }
+            ];
+        mc._convertAddresses(input);
+
+        test.deepEqual(input, expected);
+
+        test.done();
     }
+
 };
 
 
